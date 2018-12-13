@@ -1,5 +1,6 @@
 #ifndef BITMAP_PIXEL_H_INCLUDED
 #define BITMAP_PIXEL_H_INCLUDED
+
 typedef unsigned int uint;
 typedef unsigned char uchar;
 
@@ -22,7 +23,7 @@ picture * read_picture(char * path)
     FILE * f = fopen(path, "rb");
     if(f == NULL)
     {
-        fprintf(stderr, "\n!Nu se poate deschide imaginea %s!\n",path);
+        fprintf(stderr, "Nu se poate deschide imaginea %s!\n",path);
         return NULL;
     }
 
