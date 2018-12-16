@@ -4,6 +4,17 @@
 #include "pictencript.h"
 #include <math.h>
 
+typedef struct
+{
+	int x, y;
+}point;
+typedef struct
+{
+	point leftup;
+	int h, w;
+	double corelation;
+}square;
+
 void grayscale(picture *pict)
 {
 	int i, n = pict->H *pict->W;
@@ -19,36 +30,48 @@ void grayscale(picture *pict)
 //Does also correct for outside of image 
 double avg_color(picture * pict,int p1[2],int p2[2])
 {
-	double average = 0;
+	int average = 0;
 	int i,j,n;
-	n = (p2[0] - p1[0]) *(p2[1] - p1[1]);
-	//p1[0] = max(0, p1[0]);
-	//p1[1] = min(pict->W, p1[1]);
-	//p2[0] = max(0, p2[0]);
+	n = (p2[0] - p1[0]+1) *(p2[1] - p1[1]+1);
 	for (i = p1[0]; i <= p2[0]; i++)
 	{
 		for (j = p1[1]; j <= p2[1]; j++)
 		{
-			if(i>0&&j>0&&i<(int)pict->H&&j<(int)pict->W)
+			if(i>0&&j>0&&i<pict->H&&j<pict->W)
 				average += pict->pixels[i*pict->W + j].R;
 		}
 	}
-	return average / n;
+	return (double) average / n;
 }
 
-void color_square(picture *pict, int p1[2], int p2[2], pixel color)
+void color_square(picture *pict, square window, pixel color)
 {
 	int i, j;
-	for (j = p1[1]; j <= p2[1]; j++)
+	point p1 = window.leftup, p2;
+	p2.x = p1.x + window.h;
+	p2.y = p1.y + window.w;
+	//Horizontal lines
+	for (j = p1.y; j <= p2.y; j++)
 	{
 		///TODO Verificare in imagine
-		pict->pixels[p1[0] * pict->W + j] = color;
-		pict->pixels[p2[0] * pict->W + j] = color;
+		if (j > 0 &&j < (int)pict->W)
+		{
+			if(p1.x>=0&&p1.x<pict->H)
+				pict->pixels[p1.x * pict->W + j] = color;
+			if (p2.x >= 0 && p2.x < pict->H)
+				pict->pixels[p2.x * pict->W + j] = color;
+		}
+		
 	}
-	for (i = p1[0]; i <= p2[0]; i++)
+	for (i = p1.x; i <= p2.x; i++)
 	{
-		pict->pixels[ i * pict->W + p1[1]] = color;
-		pict->pixels[ i * pict->W + p2[1]] = color;
+		if (i > 0 &&i < (int)pict->H)
+		{
+			if (p1.y >= 0 && p1.y < pict->W)
+				pict->pixels[i * pict->W + p1.y] = color;
+			if (p2.y >= 0 && p2.y < pict->W)
+				pict->pixels[i * pict->W + p2.y] = color;
+		}
 	}
 }
 
@@ -74,9 +97,9 @@ double cross_corelation(picture *pict,picture *p_template,int x,int y)
 	if (diff1 == NULL || diff2 == NULL)
 		return -1;
 	double S_dev = 0, f_dev = 0;
-	for (k=0,i = 0; i < tw; i++)
+	for (k=0,i = 0; i < th; i++)
 	{
-		for (j = 0; j < th; j++,k++)
+		for (j = 0; j < tw; j++,k++)
 		{
 			uchar S_ij = p_template->pixels[i*tw + j].R;
 			diff1[k] = S_ij - S_bar;
@@ -111,39 +134,47 @@ double cross_corelation(picture *pict,picture *p_template,int x,int y)
 }
 
 
-int bmp_pattern_recognition(char *path_pict, char *path_template, double acc)
+int bmp_pattern_recognition(picture *pict, picture *p_template, double acc,square **detections,int *nr_detections )
 {
-	//Open image and template
-	picture *pict, *p_template;
-	if ((pict = read_picture(path_pict)) == NULL)
-		return -1;
-	if ((p_template = read_picture(path_template)) == NULL)
-		return -1;
+	
 	//Grayscale image and template
 	grayscale(pict);
 	grayscale(p_template);
 	//Saving image data
 	int h = pict->H, w = pict->W;
+	//Verifying every possible position in image
+	*detections = NULL;
+	*nr_detections = 0;
 	int i, j;
-	for (i = 0; i < w; i++)
+	for (i = 0; i < h; i++)
 	{
-		for (j = 0; j < h; j++)
+		for (j = 0; j < w; j++)
 		{
 			int x, y;
 			double corelation;
-			x = i - (p_template->W / 2);
-			y = j - (p_template->H / 2);
+			x = i - (p_template->H / 2);
+			y = j - (p_template->W / 2);
 			corelation = cross_corelation(pict, p_template, x, y);
 			if (corelation >= acc)
 			{
 				//printf("%d %d\n", i, j);
-				int p1[2], p2[2];
-				p1[0] = x;
-				p1[1] = y;
-				p2[0] = x + p_template->H;
-				p2[1] = y + p_template->W;
-				pixel color = { 0,0,255 };
-				color_square(pict, p1, p2,color);
+				square window;
+				window.leftup.x = x;
+				window.leftup.y = y;
+				window.h = p_template->H;
+				window.w = p_template->W;
+				window.corelation = corelation;
+				//Add window to detections
+				square * aux;
+				aux = realloc(*detections, sizeof(square)*(*nr_detections + 1));
+				if (aux == NULL)
+				{
+					fprintf(stderr, "Eroarea alocare memorie");
+					return -1;
+				}
+				*detections = aux;
+				(*detections)[*nr_detections] = window;
+				(*nr_detections)++;
 			}
 		}
 	}
@@ -182,8 +213,21 @@ int main()
 	
 	return write_picture(pict, "peppers-colortest.bmp");
 	*/
-	if (bmp_pattern_recognition("cifre_mana.bmp", "Templates\\cifra3.bmp", 0.30) == -1)
+	//Open image and template
+	picture *pict, *p_template;
+	if ((pict = read_picture("cifre_mana.bmp")) == NULL)
 		return -1;
+	if ((p_template = read_picture("Templates\\cifra6.bmp")) == NULL)
+		return -1;
+	square * detections;
+	int i,nr_detections;
+	if (bmp_pattern_recognition(pict,p_template , 0.25,&detections,&nr_detections) == -1)
+		return -1;
+	//Color detections
+	pixel color = { 0,0,255 };
+	for (i = 0; i < nr_detections; i++)
+		color_square(pict, detections[i], color);
+	write_picture(pict,"cifre_pattern.bmp");
 	system("cifre_pattern.bmp");
 	return 0;
 }

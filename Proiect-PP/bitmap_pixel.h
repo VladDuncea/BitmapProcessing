@@ -11,7 +11,7 @@ typedef struct
 
 typedef struct
 {
-    uint W, H;
+    int W, H;
     pixel * pixels;
     char * header;
 } picture;
