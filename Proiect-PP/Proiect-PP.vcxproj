@@ -123,6 +123,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bitmap_pixel.h" />
+    <ClInclude Include="pattern_recognition.h" />
     <ClInclude Include="pictencript.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

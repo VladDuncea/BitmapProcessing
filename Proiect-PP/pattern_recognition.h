@@ -1,0 +1,306 @@
+#ifndef PATTERN_RECOGNITION_H_INCLUDED
+#define PATTERN_RECOGNITION_H_INCLUDED
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include "bitmap_pixel.h"
+
+#define MIN_OVERLAP 0.2
+
+typedef struct
+{
+	int x, y;
+}point;
+
+typedef struct
+{
+	point leftup;
+	int good, digit;
+	int h, w;
+	double corelation;
+}square;
+
+int cmp(const void *a, const void *b)
+{
+	return (((square *)a)->corelation - ((square*)b)->corelation >= 0.0 ? -1 : 1);
+}
+
+int square_overlap(square * s1, square *s2)
+{
+	int i, j;
+	point p1, p2, p3, p4;
+	//Left up and right down points of s1
+	p1 = s1->leftup;
+	p2.x = p1.x + s1->h;
+	p2.y = p1.y + s1->w;
+	//Left up and right down points of s2
+	p3 = s2->leftup;
+	p4.x = p3.x + s2->h;
+	p4.y = p3.y + s2->w;
+
+	int overlap = 0;
+	for (i = p1.x; i <= p2.x; i++)
+		for (j = p1.y; j <= p2.y; j++)
+			if (i >= p3.x && i <= p4.x&& j >= p3.y && j <= p4.y)
+				overlap++;
+	if ((double)overlap / (s1->h*s1->w + s2->h*s2->w - overlap) > MIN_OVERLAP)
+		return 1;
+	return 0;
+}
+
+double avg_color(picture * pict, int p1[2], int p2[2])
+{
+	//Calculate avg color on a grayscale image in a given square(p1,p2)
+	//Does also correct for outside of image
+	int average = 0;
+	int i, j, n;
+	n = (p2[0] - p1[0] + 1) *(p2[1] - p1[1] + 1);
+	for (i = p1[0]; i <= p2[0]; i++)
+	{
+		for (j = p1[1]; j <= p2[1]; j++)
+		{
+			if (i > 0 && j > 0 && i < pict->H&&j < pict->W)
+				average += pict->pixels[i*pict->W + j].R;
+		}
+	}
+	return (double)average / n;
+}
+
+void color_square(picture *pict, square window, pixel color)
+{
+	int i, j;
+	point p1 = window.leftup, p2;
+	p2.x = p1.x + window.h;
+	p2.y = p1.y + window.w;
+	if (p1.x < 0)
+		p1.x = 0;
+	if (p2.x > pict->H)
+		p2.x = pict->H - 1;
+	if (p1.y < 0)
+		p1.y = 0;
+	if (p2.y >= pict->W)
+		p2.y = pict->W - 1;
+	//Horizontal lines
+	for (j = p1.y; j <= p2.y; j++)
+	{
+		pict->pixels[p1.x * pict->W + j] = color;
+		pict->pixels[p2.x * pict->W + j] = color;
+	}
+	for (i = p1.x; i <= p2.x; i++)
+	{
+		pict->pixels[i * pict->W + p1.y] = color;
+		pict->pixels[i * pict->W + p2.y] = color;
+	}
+}
+
+double cross_corelation(picture *pict, picture *p_template, int x, int y)
+{
+	int tw = p_template->W, th = p_template->H;
+	int n = tw * th;
+	int i, j, k;
+	double cross_sum = 0;
+	//Average grayscale intensity of template and image
+	int p1[2] = { 0,0 }, p2[2] = { th - 1,tw - 1 };
+	double S_bar = avg_color(p_template, p1, p2);
+	p1[0] = x;
+	p1[1] = y;
+	p2[0] = x + th - 1;
+	p2[1] = y + tw - 1;
+	double f_bar = avg_color(pict, p1, p2);
+	//printf("%lf %lf", S_bar, f_bar);
+	//Calculate deviation
+	//salveaza diferenta in doi vectori pentru a nu o calcula de 2 ori
+	//Vectori statici pentru a nu pierde timp in a aloca si dealoca de w*h*nr_template ori
+	double diff1[165]; //= malloc(sizeof(double)*n);
+	double diff2[165]; //= malloc(sizeof(double)*n);
+	if (diff1 == NULL || diff2 == NULL)
+		return -1;
+	double S_dev = 0, f_dev = 0;
+	for (k = 0, i = 0; i < th; i++)
+	{
+		for (j = 0; j < tw; j++, k++)
+		{
+			uchar S_ij = p_template->pixels[i*tw + j].R;
+			diff1[k] = S_ij - S_bar;
+			S_dev += diff1[k] * diff1[k];
+		}
+	}
+	for (k = 0, i = p1[0]; i <= p2[0]; i++)
+	{
+		for (j = p1[1]; j <= p2[1]; j++, k++)
+		{
+			uchar f_ij;
+			if (i > 0 && j > 0 && i < (int)pict->H && j < (int)pict->W)
+			{
+				f_ij = pict->pixels[i*pict->W + j].R;
+			}
+			else
+			{
+				f_ij = 0;
+			}
+			diff2[k] = f_ij - f_bar;
+			f_dev += diff2[k] * diff2[k];
+		}
+	}
+	S_dev = sqrt(S_dev / (n - 1));
+	f_dev = sqrt(f_dev / (n - 1));
+	//Calculate corelation
+	for (i = 0; i < n; i++)
+	{
+		cross_sum += (diff1[i] * diff2[i]) / (S_dev*f_dev);
+	}
+	//free(diff1);
+	//free(diff2);
+	return cross_sum / n;
+}
+
+int bmp_pattern_recognition(picture *pict, picture *p_template, int digit, double acc, square **detections, int *nr_detections)
+{
+	//Grayscale image and template
+	grayscale(pict);
+	grayscale(p_template);
+	//Saving image data
+	int h = pict->H, w = pict->W;
+	//Verifying every possible position in image
+	*detections = NULL;
+	*nr_detections = 0;
+	int i, j;
+	for (i = 0; i < h; i++)
+	{
+		for (j = 0; j < w; j++)
+		{
+			int x, y;
+			double corelation;
+			x = i - (p_template->H / 2);
+			y = j - (p_template->W / 2);
+			corelation = cross_corelation(pict, p_template, x, y);
+			if (corelation >= acc)
+			{
+				square window;
+				window.leftup.x = x;
+				window.leftup.y = y;
+				window.h = p_template->H;
+				window.w = p_template->W;
+				window.good = 1;
+				window.digit = digit;
+				window.corelation = corelation;
+				//Add window to detections
+				square * aux;
+				aux = realloc(*detections, sizeof(square)*(*nr_detections + 1));
+				if (aux == NULL)
+				{
+					fprintf(stderr, "Eroarea alocare memorie");
+					return -1;
+				}
+				*detections = aux;
+				(*detections)[*nr_detections] = window;
+				(*nr_detections)++;
+			}
+		}
+	}
+	return 0;
+}
+
+void remove_non_max(square * detections, int n)
+{
+	int removed = 0;
+	int i, j;
+	for (i = 0; i < n; i++)
+	{
+		if (!detections[i].good)
+			continue;
+		for (j = i + 1; j < n; j++)
+		{
+			if (detections[j].good&&square_overlap(detections + i, detections + j))
+			{
+				removed++;
+				detections[j].good = 0;
+			}
+		}
+	}
+	fprintf(stderr, "Am eliminat %d ferestre\n", removed);
+}
+
+int pattern_recognition(char *path_pict, char *path_templates, double acc)
+{
+	//Open image
+	picture *pict;
+	if ((pict = read_picture(path_pict)) == NULL)
+		return -1;
+
+	//Open templates one by one and save the detections
+	picture *p_template;
+	square * detections = NULL;
+	int i, nr_detections = 0;
+	FILE * f = fopen(path_templates, "r");
+	if (f == NULL)
+	{
+		fprintf(stderr, "\nNu se poate deschide fisieriul %s !\n", path_templates);
+		return -1;
+	}
+
+	//Getting base directory
+	char template_location[100];
+	strcpy(template_location, path_templates);
+	while (template_location[strlen(template_location) - 1] != '\\')
+		template_location[strlen(template_location) - 1] = '\0';
+	int nrchar = strlen(template_location);
+
+	for (i = 0; i <= 9; i++)
+	{
+		//Open template for i digit
+			//Path for i template
+		fscanf(f, "%s", template_location + nrchar);
+		fgetc(f); //Clear \n
+		if ((p_template = read_picture(template_location)) == NULL)
+			return -1;
+
+		//Search for this templates detections
+		square * current_detections;
+		int current_nr_detections;
+		if (bmp_pattern_recognition(pict, p_template, i, acc, &current_detections, &current_nr_detections) == -1)
+			return -1;
+		if (current_nr_detections != 0)
+		{
+			square * aux = realloc(detections, sizeof(square)*(nr_detections + current_nr_detections));
+			if (aux == NULL)
+			{
+				fprintf(stderr, "Eroare alocare memorie!");
+				return -1;
+			}
+			detections = aux;
+			memcpy(detections + nr_detections, current_detections, current_nr_detections * sizeof(square));
+			nr_detections += current_nr_detections;
+			free(current_detections);
+		}
+		//Free the template from memory
+		free_pict(&p_template);
+		fprintf(stderr, "Am verificat template-ul pt cifra %d si am %d detectii\n", i, current_nr_detections);
+	}
+	fclose(f);
+
+	//Sort detections 
+	qsort(detections, nr_detections, sizeof(square), cmp);
+
+	//Remove non-maxim
+	remove_non_max(detections, nr_detections);
+
+	//Color detections
+	pixel color[10] = { { 0,0,255 },{0,255,255 }, { 0,255,0 }, { 255,255,0 }, { 255,0,255 }, { 255,0,0 }, { 192,192,192 }, { 0,140,255 }, { 128,0,128 }, { 0,0,128 } };
+	for (i = 0; i < nr_detections; i++)
+	{
+		if (detections[i].good)
+			color_square(pict, detections[i], color[detections[i].digit]);
+	}
+
+	//Save picture
+	write_picture(pict, "cifre_pattern.bmp");
+
+	//Free memory
+	free(detections);
+	free_pict(&pict);
+	return 0;
+}
+
+#endif

@@ -26,5 +26,8 @@
     <ClInclude Include="pictencript.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="pattern_recognition.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
