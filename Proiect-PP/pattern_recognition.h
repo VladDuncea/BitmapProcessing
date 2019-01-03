@@ -26,6 +26,11 @@ int cmp(const void *a, const void *b)
 	return (((square *)a)->corelation - ((square*)b)->corelation >= 0.0 ? -1 : 1);
 }
 
+void sort_detections(square * detections, int nr)
+{
+	qsort(detections, nr, sizeof(square), cmp);
+}
+
 int square_overlap(square * s1, square *s2)
 {
 	int i, j;
@@ -44,21 +49,22 @@ int square_overlap(square * s1, square *s2)
 		for (j = p1.y; j <= p2.y; j++)
 			if (i >= p3.x && i <= p4.x&& j >= p3.y && j <= p4.y)
 				overlap++;
+
 	if ((double)overlap / (s1->h*s1->w + s2->h*s2->w - overlap) > MIN_OVERLAP)
 		return 1;
 	return 0;
 }
 
-double avg_color(picture * pict, int p1[2], int p2[2])
+double avg_color(picture * pict, point p1, point p2)
 {
 	//Calculate avg color on a grayscale image in a given square(p1,p2)
 	//Does also correct for outside of image
 	int average = 0;
 	int i, j, n;
-	n = (p2[0] - p1[0] + 1) *(p2[1] - p1[1] + 1);
-	for (i = p1[0]; i <= p2[0]; i++)
+	n = (p2.x - p1.x + 1) *(p2.y - p1.y + 1);
+	for (i = p1.x; i <= p2.x; i++)
 	{
-		for (j = p1[1]; j <= p2[1]; j++)
+		for (j = p1.y; j <= p2.y; j++)
 		{
 			if (i > 0 && j > 0 && i < pict->H&&j < pict->W)
 				average += pict->pixels[i*pict->W + j].R;
@@ -94,26 +100,29 @@ void color_square(picture *pict, square window, pixel color)
 	}
 }
 
-double cross_corelation(picture *pict, picture *p_template, int x, int y)
+double cross_corelation(picture *pict, picture *p_template, point p)
 {
 	int tw = p_template->W, th = p_template->H;
 	int n = tw * th;
 	int i, j, k;
 	double cross_sum = 0;
 	//Average grayscale intensity of template and image
-	int p1[2] = { 0,0 }, p2[2] = { th - 1,tw - 1 };
+	point p1, p2;
+	p1.x = 0; 
+	p1.y = 0;
+	p2.x = th - 1; 
+	p2.y = tw - 1;
 	double S_bar = avg_color(p_template, p1, p2);
-	p1[0] = x;
-	p1[1] = y;
-	p2[0] = x + th - 1;
-	p2[1] = y + tw - 1;
+	p1.x= p.x;
+	p1.y = p.y;
+	p2.x = p.x + th - 1;
+	p2.y = p.y + tw - 1;
 	double f_bar = avg_color(pict, p1, p2);
 	//printf("%lf %lf", S_bar, f_bar);
 	//Calculate deviation
 	//salveaza diferenta in doi vectori pentru a nu o calcula de 2 ori
-	//Vectori statici pentru a nu pierde timp in a aloca si dealoca de w*h*nr_template ori
-	double diff1[165]; //= malloc(sizeof(double)*n);
-	double diff2[165]; //= malloc(sizeof(double)*n);
+	double *diff1 = malloc(sizeof(double)*n);
+	double *diff2 = malloc(sizeof(double)*n);
 	if (diff1 == NULL || diff2 == NULL)
 		return -1;
 	double S_dev = 0, f_dev = 0;
@@ -126,9 +135,9 @@ double cross_corelation(picture *pict, picture *p_template, int x, int y)
 			S_dev += diff1[k] * diff1[k];
 		}
 	}
-	for (k = 0, i = p1[0]; i <= p2[0]; i++)
+	for (k = 0, i = p1.x; i <= p2.x; i++)
 	{
-		for (j = p1[1]; j <= p2[1]; j++, k++)
+		for (j = p1.y; j <= p2.y; j++, k++)
 		{
 			uchar f_ij;
 			if (i > 0 && j > 0 && i < (int)pict->H && j < (int)pict->W)
@@ -150,16 +159,13 @@ double cross_corelation(picture *pict, picture *p_template, int x, int y)
 	{
 		cross_sum += (diff1[i] * diff2[i]) / (S_dev*f_dev);
 	}
-	//free(diff1);
-	//free(diff2);
+	free(diff1);
+	free(diff2);
 	return cross_sum / n;
 }
 
-int bmp_pattern_recognition(picture *pict, picture *p_template, int digit, double acc, square **detections, int *nr_detections)
+int template_matching(picture *pict, picture *p_template, double acc, int digit, square **detections, int *nr_detections)
 {
-	//Grayscale image and template
-	grayscale(pict);
-	grayscale(p_template);
 	//Saving image data
 	int h = pict->H, w = pict->W;
 	//Verifying every possible position in image
@@ -170,16 +176,16 @@ int bmp_pattern_recognition(picture *pict, picture *p_template, int digit, doubl
 	{
 		for (j = 0; j < w; j++)
 		{
-			int x, y;
+			point p;
 			double corelation;
-			x = i - (p_template->H / 2);
-			y = j - (p_template->W / 2);
-			corelation = cross_corelation(pict, p_template, x, y);
+			p.x = i - (p_template->H / 2);
+			p.y = j - (p_template->W / 2);
+			corelation = cross_corelation(pict, p_template, p);
 			if (corelation >= acc)
 			{
 				square window;
-				window.leftup.x = x;
-				window.leftup.y = y;
+				window.leftup.x = p.x;
+				window.leftup.y = p.y;
 				window.h = p_template->H;
 				window.w = p_template->W;
 				window.good = 1;
@@ -206,30 +212,33 @@ void remove_non_max(square * detections, int n)
 {
 	int removed = 0;
 	int i, j;
-	for (i = 0; i < n; i++)
+	for (i = 0; i < n-1; i++)
 	{
 		if (!detections[i].good)
 			continue;
 		for (j = i + 1; j < n; j++)
 		{
-			if (detections[j].good&&square_overlap(detections + i, detections + j))
+			if (detections[j].good && square_overlap(detections + i, detections + j))
 			{
 				removed++;
 				detections[j].good = 0;
 			}
 		}
 	}
-	fprintf(stderr, "Am eliminat %d ferestre\n", removed);
+
+	//Print stats
+	printf("Am eliminat %d ferestre\n", removed);
 }
 
 int pattern_recognition(char *path_pict, char *path_templates, double acc)
 {
-	//Open image
+	//Open image and make it grayscale
 	picture *pict;
 	if ((pict = read_picture(path_pict)) == NULL)
 		return -1;
+	grayscale(pict);
 
-	//Open templates one by one and save the detections
+	//Open the .txt with the names of all the templates
 	picture *p_template;
 	square * detections = NULL;
 	int i, nr_detections = 0;
@@ -247,6 +256,7 @@ int pattern_recognition(char *path_pict, char *path_templates, double acc)
 		template_location[strlen(template_location) - 1] = '\0';
 	int nrchar = strlen(template_location);
 
+	//Open templates one by one and save the detections
 	for (i = 0; i <= 9; i++)
 	{
 		//Open template for i digit
@@ -256,13 +266,19 @@ int pattern_recognition(char *path_pict, char *path_templates, double acc)
 		if ((p_template = read_picture(template_location)) == NULL)
 			return -1;
 
+		//Grayscale template
+		grayscale(p_template);
+
 		//Search for this templates detections
 		square * current_detections;
 		int current_nr_detections;
-		if (bmp_pattern_recognition(pict, p_template, i, acc, &current_detections, &current_nr_detections) == -1)
+		if (template_matching(pict, p_template, acc, i, &current_detections, &current_nr_detections) == -1)
 			return -1;
+
+		//If new squares are found add them
 		if (current_nr_detections != 0)
 		{
+			//Create space for the new detections
 			square * aux = realloc(detections, sizeof(square)*(nr_detections + current_nr_detections));
 			if (aux == NULL)
 			{
@@ -270,23 +286,33 @@ int pattern_recognition(char *path_pict, char *path_templates, double acc)
 				return -1;
 			}
 			detections = aux;
+
+			//Copy the detections at the end of the already found ones
 			memcpy(detections + nr_detections, current_detections, current_nr_detections * sizeof(square));
 			nr_detections += current_nr_detections;
+
+			//Free the used memory
 			free(current_detections);
 		}
+
 		//Free the template from memory
 		free_pict(&p_template);
-		fprintf(stderr, "Am verificat template-ul pt cifra %d si am %d detectii\n", i, current_nr_detections);
+
+		//Print stats
+		printf("Am verificat template-ul pt cifra %d si am %d detectii\n", i, current_nr_detections);
 	}
 	fclose(f);
 
 	//Sort detections 
-	qsort(detections, nr_detections, sizeof(square), cmp);
+	sort_detections(detections, nr_detections);
 
 	//Remove non-maxim
 	remove_non_max(detections, nr_detections);
 
 	//Color detections
+		//Reopen the image to eliminate the grayscale effect
+	if ((pict = read_picture(path_pict)) == NULL)
+		return -1;
 	pixel color[10] = { { 0,0,255 },{0,255,255 }, { 0,255,0 }, { 255,255,0 }, { 255,0,255 }, { 255,0,0 }, { 192,192,192 }, { 0,140,255 }, { 128,0,128 }, { 0,0,128 } };
 	for (i = 0; i < nr_detections; i++)
 	{
@@ -294,8 +320,8 @@ int pattern_recognition(char *path_pict, char *path_templates, double acc)
 			color_square(pict, detections[i], color[detections[i].digit]);
 	}
 
-	//Save picture
-	write_picture(pict, "cifre_pattern.bmp");
+	//Save picture with colored detections
+	write_picture(pict, path_pict);
 
 	//Free memory
 	free(detections);
@@ -303,4 +329,4 @@ int pattern_recognition(char *path_pict, char *path_templates, double acc)
 	return 0;
 }
 
-#endif
+#endif // PATTERN_RECOGNITION_H_INCLUDED

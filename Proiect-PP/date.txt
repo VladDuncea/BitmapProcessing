@@ -1,0 +1,8 @@
+peppers.bmp
+peppers_cript.bmp
+secret_key.txt
+peppers_cript.bmp
+peppers_decript.bmp
+secret_key.txt
+cifre_mana.bmp
+Templates\\templates.txt

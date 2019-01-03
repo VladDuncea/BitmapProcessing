@@ -13,7 +13,7 @@ int read_key(char *path, uint *seed, uint *starting_value)
 	if (fscanf(f, "%d%d", seed, starting_value) != 2)
 		return -1;
 	fclose(f);
-	return 1;
+	return 0;
 }
 
 float chi2_sum(uint * collor_freq, float avg_freq)
@@ -63,7 +63,6 @@ void chi2_test(char *path)
 
 uint xorshift32(uint seed)
 {
-	//Uses seed first time or previous element
 	uint x = seed;
 	x ^= x << 13;
 	x ^= x >> 17;
@@ -71,7 +70,7 @@ uint xorshift32(uint seed)
 	return x;
 }
 
-uint * random_array(int seed, int n)
+uint * random_array(uint seed, int n)
 {
 	uint * rand_arr;
 	if ((rand_arr = malloc(sizeof(uint)*n)) == NULL)
@@ -80,6 +79,7 @@ uint * random_array(int seed, int n)
 		return NULL;
 	}
 	int i;
+	//Uses seed first time or previous element
 	uint prev = seed;
 	for (i = 0; i < n; i++)
 	{
@@ -140,18 +140,18 @@ int shuffle_pixels(picture * pict, uint *permutation, int n)
 	return 0;
 }
 
-void xor_pixels(picture *pict, uint * rand_arr, uint s_value, int n)
+void xor_pixels(picture *pict, uint * rand_arr, uint s_value)
 {
-	int i;
+	int i, n = pict->H * pict->W;
 	//Create pointer to each byte
-	uchar * rand_byte = (uchar*)(rand_arr + n - 1);
+	uchar * rand_byte = (uchar*)(rand_arr);
 	uchar * s_val_byte = (uchar*)&s_value;
 	pict->pixels[0].B = s_val_byte[0] ^ pict->pixels[0].B ^ rand_byte[0];
 	pict->pixels[0].G = s_val_byte[1] ^ pict->pixels[0].G ^ rand_byte[1];
 	pict->pixels[0].R = s_val_byte[2] ^ pict->pixels[0].R ^ rand_byte[2];
 	for (i = 1; i < n; i++)
 	{
-		rand_byte = (uchar*)(rand_arr + n + i + -1);
+		rand_byte = (uchar*)(rand_arr + i);
 		pict->pixels[i].B = pict->pixels[i - 1].B ^ pict->pixels[i].B ^ rand_byte[0];
 		pict->pixels[i].G = pict->pixels[i - 1].G ^ pict->pixels[i].G ^ rand_byte[1];
 		pict->pixels[i].R = pict->pixels[i - 1].R ^ pict->pixels[i].R ^ rand_byte[2];
@@ -159,21 +159,21 @@ void xor_pixels(picture *pict, uint * rand_arr, uint s_value, int n)
 
 }
 
-void unxor_pixels(picture *pict, uint * rand_arr, uint s_value, int n)
+void unxor_pixels(picture *pict, uint * rand_arr, uint s_value)
 {
-	int i;
+	int i, n = pict->H * pict->W;;
 	//Create pointer to each byte
 	uchar * rand_byte;
 	uchar * s_val_byte = (uchar*)&s_value;
 
 	for (i = n - 1; i > 0; i--)
 	{
-		rand_byte = (uchar*)(rand_arr + n + i + -1);
+		rand_byte = (uchar*)(rand_arr + i );
 		pict->pixels[i].B = pict->pixels[i - 1].B ^ pict->pixels[i].B ^ rand_byte[0];
 		pict->pixels[i].G = pict->pixels[i - 1].G ^ pict->pixels[i].G ^ rand_byte[1];
 		pict->pixels[i].R = pict->pixels[i - 1].R ^ pict->pixels[i].R ^ rand_byte[2];
 	}
-	rand_byte = (uchar*)(rand_arr + n - 1);
+	rand_byte = (uchar*)(rand_arr);
 	pict->pixels[0].B = s_val_byte[0] ^ pict->pixels[0].B ^ rand_byte[0];
 	pict->pixels[0].G = s_val_byte[1] ^ pict->pixels[0].G ^ rand_byte[1];
 	pict->pixels[0].R = s_val_byte[2] ^ pict->pixels[0].R ^ rand_byte[2];
@@ -205,7 +205,7 @@ int cipherPicture(char *path_pict, char* path_cript, char* path_key)
 	//Create shuffled picture
 	shuffle_pixels(pict, permutation, n);
 	//Cipher pixels
-	xor_pixels(pict, rand_arr, s_value, n);
+	xor_pixels(pict, rand_arr + n - 1, s_value);
 	//Write encrypted image
 	if (write_picture(pict, path_cript) == -1)
 		return -1;
@@ -247,7 +247,7 @@ int decipherPicture(char *path_cript, char* path_decript, char* path_key)
 	for (i = 0; i < n; i++)
 		inv_permutation[permutation[i]] = i;
 	//Decipher pixels
-	unxor_pixels(pict, rand_arr, s_value, n);
+	unxor_pixels(pict, rand_arr + n -1, s_value);
 	//Create unshuffled picture
 	shuffle_pixels(pict, inv_permutation, n);
 	//Write decripted image
@@ -261,7 +261,5 @@ int decipherPicture(char *path_cript, char* path_decript, char* path_key)
 	free(rand_arr);
 	return 0;
 }
-
-
 
 #endif // PICTENCRIPT_H_INCLUDED

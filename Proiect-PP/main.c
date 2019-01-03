@@ -1,30 +1,59 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include "bitmap_pixel.h"
 #include "pictencript.h"
 #include "pattern_recognition.h"
-
-#include <vld.h>
-#include <time.h>
-
-
+//#include <vld.h>
 
 int main()
 {
-	clock_t tStart = clock();
-	if(cipherPicture("peppers.bmp","peppers_cript.bmp","secret_key.txt")==-1)
+	//Fisier cu datele de rulare
+	FILE * fin = fopen("date.txt", "r");
+	if (fin == NULL)
 		return -1;
-	if(decipherPicture("peppers_cript.bmp","peppers_decript.bmp","secret_key.txt")==-1)
+
+	//Citire cai criptare
+	char path_pict[200], path_cript[200],path_key[200];
+	fscanf(fin,"%s", path_pict);
+	fgetc(fin);	//Eliminare /n
+	fscanf(fin,"%s", path_cript);
+	fgetc(fin);	//Eliminare /n
+	fscanf(fin,"%s", path_key);
+	fgetc(fin);	//Eliminare /n
+
+	//Criptare
+	if(cipherPicture(path_pict, path_cript, path_key)==-1)
 		return -1;
+
+	//Citire cai decriptare
+	char path_decript[200];
+	fscanf(fin, "%s", path_cript);
+	fgetc(fin);	//Eliminare /n
+	fscanf(fin, "%s", path_decript);
+	fgetc(fin);	//Eliminare /n
+	fscanf(fin, "%s", path_key);
+	fgetc(fin);	//Eliminare /n
+
+	//Decriptare
+	if(decipherPicture(path_cript,path_decript,path_key)==-1)
+		return -1;
+
 	//Afisare chi^2
-	chi2_test("peppers.bmp");
-	chi2_test("peppers_cript.bmp");
+	chi2_test(path_pict);
+	chi2_test(path_cript);
 	
-	//Open image and template
-	
-	
-	pattern_recognition("cifre_mana.bmp", "Templates\\templates.txt", 0.5);
-	printf("Time taken: %.2fs\n", (double)(clock() - tStart) / CLOCKS_PER_SEC);
-	system("cifre_pattern.bmp");
+	//Pattern recognition
+	char path_template_data[200];
+	fscanf(fin, "%s", path_pict);
+	fgetc(fin);	//Eliminare /n
+	fscanf(fin, "%s", path_template_data);
+	fgetc(fin);	//Eliminare /n
+
+	//Rulare pattern recognition
+	pattern_recognition(path_pict,path_template_data, 0.5);
+
+	//Afisare imagine colorata
+	system(path_pict);
 	return 0;
 }
